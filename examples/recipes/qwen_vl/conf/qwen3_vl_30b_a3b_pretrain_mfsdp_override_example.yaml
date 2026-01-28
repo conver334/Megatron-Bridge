@@ -20,12 +20,12 @@ model:
   bf16: true
   params_dtype: "torch.bfloat16"
   pipeline_dtype: "torch.bfloat16"
-  tensor_model_parallel_size: 1
-  expert_model_parallel_size: 8
+  tensor_model_parallel_size: 2
+  expert_model_parallel_size: 4
   freeze_language_model: false
   freeze_vision_model: false
   freeze_vision_projection: false
-  init_model_with_meta_device: true
+  init_model_with_meta_device: false
   seq_length: 4096
   gradient_accumulation_fusion: false
   calculate_per_token_loss: true

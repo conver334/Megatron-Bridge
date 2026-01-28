@@ -213,7 +213,7 @@ def _qwen3_vl_common(
 
     # Build provider via AutoBridge and set parallel/seq params here
     bridge = AutoBridge.from_hf_pretrained(hf_path)
-    model_cfg = bridge.to_megatron_provider(load_weights=False)
+    model_cfg = bridge.to_megatron_provider(load_weights=True)
     model_cfg.tensor_model_parallel_size = tensor_parallelism
     model_cfg.pipeline_model_parallel_size = pipeline_parallelism
     model_cfg.pipeline_dtype = pipeline_parallelism_dtype

@@ -26,12 +26,12 @@ import argparse
 import os
 
 import torch
+from megatron.core.distributed import DistributedDataParallelConfig
 from rich.console import Console
 
 from megatron.bridge import AutoBridge
 from megatron.bridge.models.conversion import weights_verification_table
 from megatron.bridge.models.decorators import torchrun_main
-from megatron.core.distributed import DistributedDataParallelConfig
 
 
 console = Console()
@@ -64,8 +64,7 @@ def _configure_model_provider(model_provider, tp: int, cp: int, ep: int) -> None
         raise ValueError(f"Invalid parallel sizes: tp={tp}, cp={cp}, ep={ep}")
     if world_size % mp_size != 0:
         raise ValueError(
-            f"WORLD_SIZE ({world_size}) must be divisible by tp*cp*ep ({mp_size}). "
-            f"Got tp={tp}, cp={cp}, ep={ep}."
+            f"WORLD_SIZE ({world_size}) must be divisible by tp*cp*ep ({mp_size}). Got tp={tp}, cp={cp}, ep={ep}."
         )
 
     model_provider.tensor_model_parallel_size = tp
@@ -92,14 +91,14 @@ def main(
         hf_model_id, trust_remote_code=trust_remote_code, torch_dtype=torch.bfloat16
     )
 
-    model_provider = bridge.to_megatron_provider(load_weights=False)
+    model_provider = bridge.to_megatron_provider(load_weights=True)
     _configure_model_provider(model_provider, tp=tp, cp=cp, ep=ep)
 
     ddp_config = DistributedDataParallelConfig(
         use_distributed_optimizer=True,
         check_for_nan_in_grad=True,
-        use_megatron_fsdp=True, 
-        data_parallel_sharding_strategy='optim_grads_params',
+        use_megatron_fsdp=True,
+        data_parallel_sharding_strategy="optim_grads_params",
     )
 
     megatron_model = model_provider.provide_distributed_model(
@@ -110,7 +109,7 @@ def main(
         data_parallel_random_init=False,
     )
 
-    bridge.load_hf_weights(megatron_model)
+    # bridge.load_hf_weights(megatron_model)
     table = weights_verification_table(bridge, megatron_model)
     if _is_rank_zero():
         console.print(table)
@@ -122,9 +121,7 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Convert between HuggingFace and Megatron-FSDP model formats."
-    )
+    parser = argparse.ArgumentParser(description="Convert between HuggingFace and Megatron-FSDP model formats.")
     parser.add_argument("--hf-model-id", type=str, default=HF_MODEL_ID, help="HuggingFace model ID to convert")
     parser.add_argument(
         "--output-dir",
