@@ -21,6 +21,7 @@ import torch
 import torch.distributed
 import torch.nn as nn
 from megatron.core import mpu
+from megatron.core.distributed import DTensor
 from megatron.core.fp8_utils import FP8_TENSOR_CLASS, HAVE_TE_FP8_TENSOR_CLASS
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.transformer_config import TransformerConfig
@@ -110,6 +111,7 @@ class MegatronParamMapping(ABC, Generic[WeightType]):
             self.ep_group = None
             self._tp_group = None
             self._etp_group = None
+        self.use_fsdp = True
 
         # if a param mapping class takes in modified HF weight name from maybe_modify_loaded_hf_weight,
         # allow_hf_name_mismatch should be set to True to bypass a check in `build_conversion_tasks`
@@ -827,10 +829,15 @@ class ColumnParallelMapping(MegatronParamMapping[torch.Tensor]):
         else:
             splits = None
 
+        if isinstance(target_param, DTensor):
+            output_shape = [target_param.shape[0] // self.tp_size, *target_param.shape[1:]]
+        else:
+            output_shape = target_param.shape
+
         # Scatter to all ranks. Each rank gets its sharded shape from its module.
         return self.scatter_to_tp_ranks(
             splits,
-            target_param.shape,
+            output_shape,
             target_param.dtype,
             target_param.device,
         )
@@ -850,7 +857,7 @@ class ColumnParallelMapping(MegatronParamMapping[torch.Tensor]):
         # Dequantize if needed
         megatron_weights = self.maybe_dequantize(megatron_weights)
 
-        if self.tp_size == 1:
+        if self.tp_size == 1 or self.use_fsdp:
             full_weights = megatron_weights
         else:
             # Gather from all TP ranks
@@ -920,10 +927,15 @@ class RowParallelMapping(MegatronParamMapping[torch.Tensor]):
         else:
             splits = None
 
+        if isinstance(target_param, DTensor) and hf_weights.ndim != 1:
+            output_shape = [target_param.shape[0], target_param.shape[1] // self.tp_size, *target_param.shape[2:]]
+        else:
+            output_shape = target_param.shape
+
         # Scatter to all ranks. Each rank gets its sharded shape from its module.
         return self.scatter_to_tp_ranks(
             splits,
-            target_param.shape,
+            output_shape,
             target_param.dtype,
             target_param.device,
         )
@@ -943,7 +955,7 @@ class RowParallelMapping(MegatronParamMapping[torch.Tensor]):
         # Dequantize if needed
         megatron_weights = self.maybe_dequantize(megatron_weights)
 
-        if self.tp_size == 1 or len(megatron_weights.shape) == 1:
+        if self.tp_size == 1 or len(megatron_weights.shape) == 1 or self.use_fsdp:
             # bias is unsharded in row parallel, so we can just return it
             full_weights = megatron_weights
         else:
@@ -1993,10 +2005,14 @@ class GatedMLPMapping(MegatronParamMapping[Dict[str, torch.Tensor]]):
         else:
             splits = None
 
+        if isinstance(target_param, DTensor):
+            output_shape = [target_param.shape[0] // self.tp_size, *target_param.shape[1:]]
+        else:
+            output_shape = target_param.shape
         # Scatter the concatenated shards to each rank
         return self.scatter_to_tp_ranks(
             splits,
-            target_param.shape,
+            output_shape,
             target_param.dtype,
             target_param.device,
         )
@@ -2023,8 +2039,10 @@ class GatedMLPMapping(MegatronParamMapping[Dict[str, torch.Tensor]]):
             gate, up = torch.chunk(fused_mlp, 2, dim=0)
 
         else:
-            # Gather shards from all TP ranks
-            gathered_shards = self.gather_from_tp_ranks(megatron_weights)
+            if self.use_fsdp:
+                gathered_shards = torch.chunk(megatron_weights, self.tp_size, dim=0)
+            else:
+                gathered_shards = self.gather_from_tp_ranks(megatron_weights)
 
             # Split each shard back into gate and up parts
             gate_parts = []
