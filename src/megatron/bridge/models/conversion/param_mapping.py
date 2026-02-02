@@ -21,7 +21,6 @@ import torch
 import torch.distributed
 import torch.nn as nn
 from megatron.core import mpu
-from megatron.core.distributed import DTensor
 from megatron.core.fp8_utils import FP8_TENSOR_CLASS, HAVE_TE_FP8_TENSOR_CLASS
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.transformer_config import TransformerConfig
@@ -29,6 +28,7 @@ from megatron.core.utils import (
     get_pg_rank,
     get_pg_size,
 )
+from torch.distributed._tensor import DTensor
 
 from megatron.bridge.models.conversion.utils import get_module_and_param_from_name, remove_non_pickleables
 
@@ -111,7 +111,6 @@ class MegatronParamMapping(ABC, Generic[WeightType]):
             self.ep_group = None
             self._tp_group = None
             self._etp_group = None
-        self.use_fsdp = True
 
         # if a param mapping class takes in modified HF weight name from maybe_modify_loaded_hf_weight,
         # allow_hf_name_mismatch should be set to True to bypass a check in `build_conversion_tasks`
@@ -857,7 +856,12 @@ class ColumnParallelMapping(MegatronParamMapping[torch.Tensor]):
         # Dequantize if needed
         megatron_weights = self.maybe_dequantize(megatron_weights)
 
-        if self.tp_size == 1 or self.use_fsdp:
+        if hasattr(megatron_module, "_parameters") and "weight" in megatron_module._parameters:
+            use_fsdp = isinstance(megatron_module._parameters["weight"], DTensor)
+        else:
+            use_fsdp = False
+
+        if self.tp_size == 1 or use_fsdp:
             full_weights = megatron_weights
         else:
             # Gather from all TP ranks
@@ -955,7 +959,12 @@ class RowParallelMapping(MegatronParamMapping[torch.Tensor]):
         # Dequantize if needed
         megatron_weights = self.maybe_dequantize(megatron_weights)
 
-        if self.tp_size == 1 or len(megatron_weights.shape) == 1 or self.use_fsdp:
+        if hasattr(megatron_module, "_parameters") and "weight" in megatron_module._parameters:
+            use_fsdp = isinstance(megatron_module._parameters["weight"], DTensor)
+        else:
+            use_fsdp = False
+
+        if self.tp_size == 1 or len(megatron_weights.shape) == 1 or use_fsdp:
             # bias is unsharded in row parallel, so we can just return it
             full_weights = megatron_weights
         else:
@@ -2032,6 +2041,11 @@ class GatedMLPMapping(MegatronParamMapping[Dict[str, torch.Tensor]]):
         # Dequantize if needed
         megatron_weights = self.maybe_dequantize(megatron_weights)
 
+        if hasattr(megatron_module, "_parameters") and "weight" in megatron_module._parameters:
+            use_fsdp = isinstance(megatron_module._parameters["weight"], DTensor)
+        else:
+            use_fsdp = False
+
         # Handle TP gathering
         if self.tp_size == 1:
             # No TP, just split the concatenated tensor
@@ -2039,7 +2053,7 @@ class GatedMLPMapping(MegatronParamMapping[Dict[str, torch.Tensor]]):
             gate, up = torch.chunk(fused_mlp, 2, dim=0)
 
         else:
-            if self.use_fsdp:
+            if use_fsdp:
                 gathered_shards = torch.chunk(megatron_weights, self.tp_size, dim=0)
             else:
                 gathered_shards = self.gather_from_tp_ranks(megatron_weights)
