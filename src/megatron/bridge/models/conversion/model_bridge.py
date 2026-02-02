@@ -37,7 +37,7 @@ from typing import (
 import torch
 from megatron.core import parallel_state
 from megatron.core.distributed.fsdp.mcore_fsdp_adapter import FullyShardedDataParallel
-from megatron.core.distributed.fsdp.src.megatron_fsdp.uneven_dtensor import gather_uneven_dtensor_to_full_tensor
+from megatron.core.distributed.fsdp.src.megatron_fsdp.uneven_dtensor import uneven_dtensor_to_full_tensor
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.core.utils import (
@@ -979,11 +979,9 @@ class MegatronModelBridge(Generic[HFPreTrained, ModelProviderTarget, MegatronMod
                 )
 
             if isinstance(task.param_weight, DTensor):
-                full_dtensor = gather_uneven_dtensor_to_full_tensor(
-                    task.param_weight,
-                    debug_print_all_chunk_info=debug_print_all_chunk_info,
-                )
-                megatron_weights = full_dtensor.to_local()
+                full_dtensor = uneven_dtensor_to_full_tensor(task.param_weight)
+                megatron_weights = full_dtensor
+                # megatron_weights = full_dtensor.to_local()
                 task.mapping.use_fsdp = True
             else:
                 megatron_weights = task.param_weight
