@@ -37,7 +37,7 @@ from typing import (
 import torch
 from megatron.core import parallel_state
 from megatron.core.distributed.fsdp.mcore_fsdp_adapter import FullyShardedDataParallel
-from megatron.core.distributed.fsdp.src.megatron_fsdp.uneven_dtensor import gather_uneven_dtensor_to_full_tensor
+from megatron.core.distributed.fsdp.src.megatron_fsdp.uneven_dtensor import uneven_dtensor_to_full_tensor
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.core.utils import (
@@ -969,8 +969,7 @@ class MegatronModelBridge(Generic[HFPreTrained, ModelProviderTarget, MegatronMod
 
         for task in self._with_progress_tracking(megatron_to_hf_tasks, "Converting to HuggingFace", show_progress):
             if isinstance(task.param_weight, DTensor):
-                full_dtensor = gather_uneven_dtensor_to_full_tensor(task.param_weight)
-                megatron_weights = full_dtensor.to_local()
+                megatron_weights = uneven_dtensor_to_full_tensor(task.param_weight)
             else:
                 megatron_weights = task.param_weight
             converted_weights_dict = task.mapping.megatron_to_hf(megatron_weights, task.megatron_module)
