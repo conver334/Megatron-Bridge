@@ -763,6 +763,7 @@ class MegatronModelBridge(Generic[HFPreTrained, ModelProviderTarget, MegatronMod
 
         use_megatron_fsdp = isinstance(megatron_model[0], FullyShardedDataParallel)
         if use_megatron_fsdp:
+            original_megatron_model = megatron_model
             megatron_model = [megatron_model[0].module.module]
         # [ModelOpt]: Hide extra parameters registered in Distillation mode
         with contextlib.ExitStack() as stack:
@@ -822,7 +823,11 @@ class MegatronModelBridge(Generic[HFPreTrained, ModelProviderTarget, MegatronMod
                 task.param_weight.data.copy_(converted_weights)
 
         self._broadcast_shared_embeddings(megatron_model)
-        return megatron_model
+        if use_megatron_fsdp:
+            original_megatron_model[0].module.install_optimized_model_weights()
+            return original_megatron_model
+        else:
+            return megatron_model
 
     def stream_weights_hf_to_megatron(
         self,

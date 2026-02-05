@@ -856,10 +856,10 @@ class ColumnParallelMapping(MegatronParamMapping[torch.Tensor]):
         # Dequantize if needed
         megatron_weights = self.maybe_dequantize(megatron_weights)
 
-        if hasattr(megatron_module, "_parameters") and "weight" in megatron_module._parameters:
-            use_fsdp = isinstance(megatron_module._parameters["weight"], DTensor)
-        else:
-            use_fsdp = False
+        use_fsdp = hasattr(megatron_module, "_parameters") and any(
+            key.startswith("weight") and isinstance(value, DTensor)
+            for key, value in megatron_module._parameters.items()
+        )
 
         if self.tp_size == 1 or use_fsdp:
             full_weights = megatron_weights
@@ -959,10 +959,10 @@ class RowParallelMapping(MegatronParamMapping[torch.Tensor]):
         # Dequantize if needed
         megatron_weights = self.maybe_dequantize(megatron_weights)
 
-        if hasattr(megatron_module, "_parameters") and "weight" in megatron_module._parameters:
-            use_fsdp = isinstance(megatron_module._parameters["weight"], DTensor)
-        else:
-            use_fsdp = False
+        use_fsdp = hasattr(megatron_module, "_parameters") and any(
+            key.startswith("weight") and isinstance(value, DTensor)
+            for key, value in megatron_module._parameters.items()
+        )
 
         if self.tp_size == 1 or len(megatron_weights.shape) == 1 or use_fsdp:
             # bias is unsharded in row parallel, so we can just return it
@@ -2041,10 +2041,10 @@ class GatedMLPMapping(MegatronParamMapping[Dict[str, torch.Tensor]]):
         # Dequantize if needed
         megatron_weights = self.maybe_dequantize(megatron_weights)
 
-        if hasattr(megatron_module, "_parameters") and "weight" in megatron_module._parameters:
-            use_fsdp = isinstance(megatron_module._parameters["weight"], DTensor)
-        else:
-            use_fsdp = False
+        use_fsdp = hasattr(megatron_module, "_parameters") and any(
+            key.startswith("weight") and isinstance(value, DTensor)
+            for key, value in megatron_module._parameters.items()
+        )
 
         # Handle TP gathering
         if self.tp_size == 1:
